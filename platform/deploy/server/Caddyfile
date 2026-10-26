@@ -1,0 +1,13 @@
+{
+    email {$ACME_EMAIL}
+}
+{$APP_DOMAIN} {
+    encode zstd gzip
+    @api path /api/* /callback/*
+    handle @api {
+        reverse_proxy backend:3001
+    }
+    handle {
+        reverse_proxy web:8080
+    }
+}

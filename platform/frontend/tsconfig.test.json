@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "strict": true,
+    "outDir": ".test-dist",
+    "rootDir": "."
+  },
+  "include": [
+    "src/api/tenant-context.ts",
+    "src/auth/token-store.ts",
+    "src/auth/platform-access.ts",
+    "src/auth/tenant-session.ts",
+    "test/**/*.test.ts"
+  ]
+}

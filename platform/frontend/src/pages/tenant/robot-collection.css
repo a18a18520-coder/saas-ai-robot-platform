@@ -1,0 +1,6 @@
+.collection-preview-result { margin-top: 16px; padding: 16px; border-radius: 8px; background: var(--info-bg); color: var(--text-secondary); overflow-wrap: anywhere; }
+.collection-preview-failed, .collection-preview-blocked, .rag-panel .collection-validation-errors[role="alert"] { background: var(--error-bg); color: var(--error-text); }
+.collection-preview-needs_review { background: var(--warning-bg); color: var(--text-secondary); }
+.collection-validation-errors ul { padding-left: 20px; }
+.collection-validation-errors li { margin-top: 8px; }
+.collection-validation-errors code { overflow-wrap: anywhere; }

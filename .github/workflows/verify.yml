@@ -1,0 +1,52 @@
+name: Source verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  platform-and-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/publication-check.cjs
+      - run: node --test scripts/publication-check.test.cjs
+      - run: npm ci
+        working-directory: platform/backend
+      - run: npm test -- --runInBand
+        working-directory: platform/backend
+      - run: npm run build
+        working-directory: platform/backend
+      - run: npm ci
+        working-directory: platform/frontend
+      - run: npm test && npm run build
+        working-directory: platform/frontend
+      - run: npm ci
+        working-directory: wechat-collector
+      - run: npm run check && npm test
+        working-directory: wechat-collector
+      - run: npm run test:platform -- ../platform && npm run test:tenant-sync -- ../platform
+        working-directory: wechat-collector
+  collector-cross-platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: wechat-collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+# No business database, model credentials, release upload or production deploy.

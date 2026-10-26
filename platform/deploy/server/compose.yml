@@ -1,0 +1,111 @@
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "5"}
+x-backend: &backend
+  image: robot-platform-backend:${RELEASE_TAG:?Set RELEASE_TAG}
+  build:
+    context: ../..
+    dockerfile: deploy/server/backend.Dockerfile
+    target: ${BACKEND_TARGET:-runtime}
+  env_file: ${SERVER_ENV_FILE:-.env}
+  environment:
+    JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+    APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Set APP_ENCRYPTION_KEY}
+    PLATFORM_SUPER_ADMIN_PASSWORD: ${PLATFORM_SUPER_ADMIN_PASSWORD:?Set PLATFORM_SUPER_ADMIN_PASSWORD}
+    NODE_ENV: production
+    PORT: "3001"
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_SYNC: "false"
+    DB_MIGRATIONS_RUN: "false"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    TRUST_PROXY_HOPS: "1"
+    PUBLIC_APP_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
+    CORS_ORIGINS: https://${APP_DOMAIN}
+  init: true
+  logging: *logging
+  volumes: [uploads:/app/uploads]
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?Set DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS:?Set DB_PASS}
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, everysec]
+    restart: unless-stopped
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+  backend:
+    <<: *backend
+    restart: unless-stopped
+    stop_grace_period: 45s
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/api/v1/public/health/ready',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+  migrate:
+    <<: *backend
+    profiles: [ops]
+    command: [node, node_modules/typeorm/cli.js, -d, dist/database/data-source.js, migration:run]
+    depends_on:
+      postgres: {condition: service_healthy}
+  preflight:
+    <<: *backend
+    profiles: [ops]
+    command: [node, dist/config/production-preflight.js]
+  web:
+    image: robot-platform-web:${RELEASE_TAG:?Set RELEASE_TAG}
+    build:
+      context: ../..
+      dockerfile: deploy/server/frontend.Dockerfile
+      args: {PUBLIC_ORIGIN: 'https://${APP_DOMAIN}'}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend: {condition: service_healthy}
+      web: {condition: service_healthy}
+    logging: *logging
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+  caddy_data:
+  caddy_config:

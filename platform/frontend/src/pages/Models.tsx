@@ -1,0 +1,29 @@
+import { useFeedback, Feedback, AsyncButton, Modal, Tabs, LoadState, notify } from '../components/Interaction';
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import TenantModelPolicy from '../components/TenantModelPolicy';
+type Model = { id?: string; name: string; baseUrl: string; model: string; apiKey: string; purpose: string; contextWindow: number; maxOutputTokens: number; timeoutMs: number; tenantIds: string[]; isActive: boolean; supportsTools: boolean };
+const empty: Model = { name: '', baseUrl: '', model: '', apiKey: '', purpose: 'chat', contextWindow: 8192, maxOutputTokens: 1024, timeoutMs: 30000, tenantIds: [], isActive: true, supportsTools: false };
+export default function Models() {
+  const [rows, setRows] = useState<Model[]>([]), [form, setForm] = useState<Model>({ ...empty });
+  const [tenants, setTenants] = useState<Array<{ id: string; name: string }>>([]);
+  const [message, setMessage] = useFeedback(), [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false), [loading, setLoading] = useState(true), [loadError, setLoadError] = useState('');
+  const [baseline, setBaseline] = useState(JSON.stringify(empty));
+  function edit(model: Model) { setForm({ ...model }); setBaseline(JSON.stringify(model)); setMessage(''); setEditing(true); }
+  async function load() { setLoading(true); setLoadError(''); try { setRows(await api<Model[]>('/api/v1/admin/models')); } catch (e) { setLoadError((e as Error).message); } finally { setLoading(false); } }
+  useEffect(() => { load().catch(e => setMessage(e.message)); api<Array<{ id: string; name: string }> | { list: Array<{ id: string; name: string }> }>('/api/v1/admin/tenants').then(v => setTenants(Array.isArray(v) ? v : v.list ?? [])).catch(e => setMessage(e.message)); }, []);
+  async function save() { setBusy(true); try { const saved = await api<Model>('/api/v1/admin/models' + (form.id ? '/' + form.id : ''), { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form) }); setForm(saved); setEditing(false); await load(); notify('模型已保存'); } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); } }
+  async function test(id: string) { setBusy(true); try { await api(`/api/v1/admin/models/${id}/test`, { method: 'POST' }); notify('连接测试成功'); } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); } }
+  return <><div className="page-header"><div><h1>模型管理</h1><p className="desc">统一管理模型服务与租户模型配置，同一租户下的机器人共同使用。</p></div><AsyncButton className="btn btn-secondary" disabled={busy} onClick={() => edit(empty)}>新增模型</AsyncButton></div>
+    {!editing && message && <Feedback message={message} />}
+    <Tabs items={[{ id: 'services', label: '模型服务', content: <LoadState loading={loading} error={loadError} onRetry={load}><div className="card rag-panel" style={{ overflowX: 'auto', marginBottom: 20 }}><div className="ui-table-scroll" tabIndex={0} role="region" aria-label="数据表格"><table className="data"><thead><tr><th>名称</th><th>模型</th><th>用途</th><th>授权租户</th><th>状态</th><th>操作</th></tr></thead><tbody>{rows.map(m => <tr key={m.id}><td>{m.name}</td><td>{m.model}</td><td>{m.purpose}</td><td>{m.tenantIds.length}</td><td>{m.isActive ? '启用' : '停用'}</td><td><AsyncButton className="btn btn-secondary" disabled={busy} onClick={() => edit(m)}>编辑</AsyncButton> <AsyncButton className="btn btn-secondary" disabled={busy || m.purpose !== 'chat'} onClick={() => test(m.id!)}>测试连接</AsyncButton></td></tr>)}</tbody></table></div>{!rows.length && <p>尚未添加模型。配置服务后，授权租户即可在机器人中使用。</p>}</div></LoadState> }, { id: 'tenants', label: '租户模型', content: <TenantModelPolicy tenants={tenants} models={rows} /> }]} />
+    {editing && <Modal title={form.id ? '编辑模型' : '新增模型'} drawer dirty={JSON.stringify(form) !== baseline} onClose={() => setEditing(false)}>
+    <section id="model-editor" className="card rag-panel" style={{ maxWidth: 800 }}><fieldset className="wiki-editor-fields" disabled={busy}><p>服务使用兼容 Chat Completions 的接口，地址应包含服务要求的版本路径，例如 /v1。</p>
+      {(['name', 'baseUrl', 'model', 'apiKey'] as const).map((key, i) => <label key={key} style={{ display: 'block', marginBottom: 12 }}>{['显示名称', '服务地址', '模型标识', 'API 密钥'][i]}<input className="input" style={{ display: 'block', width: '100%' }} type={key === 'apiKey' ? 'password' : 'text'} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} /></label>)}
+      <label>用途 <select className="select" value={form.purpose} onChange={e => setForm({ ...form, purpose: e.target.value })}><option value="chat">对话 / 摘要 / 评测</option><option value="embedding">文本嵌入</option><option value="rerank">重排</option></select></label>
+      {(['contextWindow', 'maxOutputTokens', 'timeoutMs'] as const).map((key, i) => <label key={key} style={{ display: 'block', margin: '12px 0' }}>{['上下文窗口', '最大输出 Token', '单次超时（毫秒）'][i]} <input className="input" type="number" value={form[key]} onChange={e => setForm({ ...form, [key]: Number(e.target.value) })} /></label>)}
+      <fieldset><legend>授权租户</legend>{tenants.map(t => <label key={t.id} style={{ display: 'block' }}><input type="checkbox" checked={form.tenantIds.includes(t.id)} onChange={e => setForm({ ...form, tenantIds: e.target.checked ? [...form.tenantIds, t.id] : form.tenantIds.filter(id => id !== t.id) })} /> {t.name}</label>)}</fieldset>
+      <p><label><input type="checkbox" checked={form.supportsTools} onChange={e => setForm({ ...form, supportsTools: e.target.checked })} /> 支持工具调用</label></p><p className="small">编辑时保留密钥占位值即不修改密钥；清空后保存将移除密钥。</p><p><label><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /> 启用模型</label></p><AsyncButton className="btn btn-primary" disabled={busy || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim()} onClick={save}>{busy ? '处理中…' : '保存模型'}</AsyncButton>
+    {message && <Feedback message={message} />}</fieldset></section></Modal>}</>;
+}

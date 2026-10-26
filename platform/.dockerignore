@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+**/.DS_Store
+.runtime
+.tmp
+**/uploads
+deploy/dify/volumes
+deploy/server/backups
+**/.test-dist
+**/coverage
+**/*.pem
+**/*.key

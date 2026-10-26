@@ -1,0 +1,15 @@
+.followup-table { width:100%; min-width:1100px; table-layout:fixed; }
+.followup-table td, .followup-table th { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.followup-table th:first-child { width:28%; }
+.followup-table th:last-child { width:200px; }
+.followup-table td:first-child, .followup-table th:first-child { position:sticky; left:0; background:var(--bg-card); z-index:1; }
+.followup-table td:last-child, .followup-table th:last-child { position:sticky; right:0; background:var(--bg-card); z-index:1; }
+.followup-actions { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; }
+.followup-form { display:grid; gap:20px; }
+.followup-form label { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; align-items:start; }
+.followup-form .input, .followup-form .select { width:100%; box-sizing:border-box; }
+.followup-form textarea { resize:vertical; }
+.followup-form .followup-check { display:flex; align-items:center; gap:8px; }
+.followup-knowledge { display:grid; gap:16px; border-top:1px solid var(--border); padding-top:20px; }
+.followup-prose { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; margin:8px 0; }
+@media(max-width:767px) { .followup-form label { grid-template-columns:1fr; gap:6px; } }

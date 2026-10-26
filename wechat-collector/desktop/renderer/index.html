@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+  <title>微信信息采集助手</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="preview-bridge.js" defer></script>
+  <script src="monitor.js" defer></script>
+  <script src="current-monitor.js" defer></script>
+  <script src="app.js" defer></script>
+  <script src="monitor-ui.js" defer></script>
+  <script src="sidecar.js" defer></script>
+  <script src="flow-state.js" defer></script>
+  <script src="onboarding.js" defer></script>
+  <script src="tenant-sync.js" defer></script>
+</head>
+<body>
+  <header class="app-header"><strong>微信采集助手</strong><button id="dock" class="text-button" disabled>贴靠微信</button></header>
+  <main>
+    <div id="demo-banner" class="notice" hidden>界面验收模式 · 仅合成数据，不读取微信、不保存真实聊天、不连接平台。</div>
+    <p class="privacy-note">默认本地保存 · 登录并为会话开启同步后才上传</p>
+    <details id="tenant-sync-panel" class="section-disclosure">
+      <summary>租户同步 <span id="sync-summary" class="badge">未登录</span></summary>
+      <p id="sync-notice" class="hint" role="status">可直接使用租户账号登录，不需要复制令牌。未开启同步的会话仍仅保存在本地。</p>
+      <form id="sync-login-form">
+        <label>平台服务地址<input id="sync-origin" type="url" placeholder="http://localhost:3001" required autocomplete="url"></label>
+        <label>租户账号<input id="sync-account" maxlength="200" required autocomplete="username"></label>
+        <label>密码<input id="sync-password" type="password" maxlength="1024" required autocomplete="current-password"></label>
+        <button id="sync-login" class="primary" type="submit">登录租户</button>
+        <p class="hint">填写后端服务地址；仅本机可用 HTTP。密码和登录凭据不保存，登录过期需重新登录。</p>
+      </form>
+      <div id="sync-connected" hidden>
+        <p id="sync-identity"></p><div class="actions"><button id="sync-refresh">刷新群与回执</button><button id="sync-logout" class="text-button">退出并停止同步</button></div>
+        <details id="sync-config" open><summary>会话与同步设置</summary>
+        <label>本地已绑定会话<select id="sync-local-group"><option value="">先完成下方会话绑定</option></select></label>
+        <label>关联租户群<select id="sync-remote-group"><option value="">请选择已有微信群</option></select></label>
+        <p id="sync-mapping" class="hint">群名不是唯一标识；请明确选择对应群。同名群不会自动合并。</p>
+        <label>本人在微信中的昵称（选填）<input id="sync-self-name" maxlength="128" placeholder="用于右侧本人消息，与租户账号无关"></label>
+        <label class="check"><input id="sync-layout" type="checkbox">使用浅色标准文字气泡，允许高置信度且归属清晰的消息自动同步</label>
+        <p class="hint">复杂卡片、图片、引用、隐藏昵称和识别不清的内容需人工核对。OCR 不能验证真实微信身份或保证消息完整性。</p>
+        <label class="check"><input id="sync-enabled" type="checkbox">为此会话开启消息同步</label>
+        <label class="check"><input id="sync-consent" type="checkbox">确认目标群正确，且有权将该会话的昵称、单条原文和本人标记同步至此租户</label>
+        <button id="sync-bind" class="primary">保存会话同步设置</button>
+        <p class="hint">仅处理开启后新采集的画面，不补传旧截图。只上传消息文本与依据摘要，不上传截图。暂停采集不停止待同步队列；停止同步请取消勾选并保存，或退出登录。</p>
+        </details>
+        <div class="section-heading"><h2>消息同步</h2><span id="sync-count" class="badge">0 条</span></div>
+        <p id="sync-empty" class="empty">开启会话同步后开始采集。可靠消息会自动同步；疑似消息在这里核对。</p>
+        <div id="sync-messages" class="sync-messages"></div>
+      </div>
+    </details>
+    <details id="permission-panel" class="flow-step" open>
+      <summary><span>1 · 系统权限</span><span id="permission-state" class="badge">检查中</span></summary>
+      <p id="permission-hint" class="hint" role="status">正在检查录屏与窗口控制权限，不会自动申请或开启权限。</p>
+      <div class="actions"><button id="screen-settings" hidden>录屏权限</button><button id="control-settings" hidden>滚动与切群权限</button><button id="check-environment" class="text-button">重新检查</button></div>
+      <div id="control-preflight" hidden><p id="monitor-permission" class="hint" role="status">滚动或轮巡前需检查控制组件授权。</p><button id="check-control">检查所选窗口的控制权限</button></div>
+      <details id="permission-help"><summary>授权后仍不可用？</summary><p id="control-help" class="hint">系统授权需由你本人确认，授权后请退出并重新打开助手。不滚动时无需窗口控制权限。</p><button id="reveal-control" hidden>定位需要授权的控制组件</button></details>
+    </details>
+    <section id="current-panel" class="current-panel" aria-labelledby="current-title" tabindex="-1">
+      <div class="section-heading"><h1 id="current-title">2 · 选择会话</h1><span id="current-state" class="badge" role="status">未启动</span></div>
+      <nav class="mode-switch" aria-label="采集模式"><button id="mode-current" aria-pressed="true">单个会话</button><button id="mode-specified" aria-pressed="false">多会话轮巡</button></nav>
+      <p id="quick-hint" class="hint" role="status">先在微信打开目标聊天，再连接窗口。</p>
+      <div class="actions"><button id="quick-connect">连接微信窗口</button><button id="bind-current" hidden>绑定当前打开的聊天</button></div>
+      <div id="saved-conversations" hidden><label for="current-group">选择已绑定会话（不会自动跟随微信）</label><select id="current-group"><option value="">请选择会话</option></select></div>
+      <div class="actions"><button id="quick-resume" class="text-button" hidden>校验并恢复连接</button><button id="quick-calibrate" class="text-button" hidden>调整采集范围</button></div>
+      <p id="current-help" class="hint">聊天标题变化即暂停；换聊天请重新选择或绑定。</p>
+    </section>
+    <section id="specified-panel" class="monitor-panel" hidden aria-labelledby="monitor-title">
+      <div class="section-heading"><h2 id="monitor-title">指定会话列表</h2><span id="monitor-state" class="badge">未启动</span></div>
+      <p class="hint">逐个打开并绑定聊天，再勾选本轮目标。同一微信窗口内依次切换，每个会话独立保存。</p>
+      <div class="table-scroll"><table class="conversation-table"><thead class="sr-only"><tr><th>目标会话</th><th>状态</th><th>截图数</th><th>操作</th></tr></thead><tbody id="monitor-groups"></tbody></table></div>
+    </section>
+    <section id="schedule-panel" class="schedule-panel" aria-labelledby="schedule-title">
+      <h2 id="schedule-title">3 · 频率与滚动</h2>
+      <div class="schedule-fields"><div><label for="interval">间隔（秒）</label><input id="interval" type="number" min="2" max="3600" value="10"></div>
+      <div id="single-scroll-settings"><label for="scroll-mode">会话滚动</label><select id="scroll-mode"><option value="none">不滚动</option><option value="up">向上读历史</option><option value="down">向下跟进</option></select></div></div>
+      <p id="frequency-help" class="hint">每次识别完成后等待 10 秒，不会并发堆积。</p>
+      <div id="history-limit-field" hidden><label for="current-history">历史上限（屏，含当前屏）</label><input id="current-history" type="number" min="1" max="30" value="10"></div>
+      <div id="rotation-settings" hidden><input id="auto-rotate" type="checkbox" hidden><label for="rotation-history">首次历史上限（屏，0 为不向上滚动）</label><input id="rotation-history" type="number" min="0" max="30" value="10"><p class="hint">首次向上读取有限历史，随后返回并检查新增；完成历史的会话不重复回溯。</p></div>
+      <details id="capture-limit-settings"><summary>更多：本轮次数</summary><label for="count">检查次数（0 为持续，最多 50）</label><input id="count" type="number" min="0" max="50" value="0"></details>
+      <label id="capture-consent-label" class="check"><input id="capture-consent" type="checkbox">我确认仅采集所选会话及范围</label>
+      <label id="scroll-consent-label" class="check" hidden><input id="scroll-consent" type="checkbox">允许将微信置于前台并滚动此会话</label>
+      <label id="monitor-consent-label" class="check" hidden><input id="monitor-consent" type="checkbox">允许切换并滚动本轮勾选的会话</label>
+      <p id="scroll-help" class="hint" hidden>运行时请勿操作微信或鼠标。遇到标题变化、遮挡、锁屏或权限问题即暂停。</p>
+      <div hidden><button id="monitor-start" disabled>开始轮巡</button><button id="monitor-stop" disabled>停止轮巡</button></div>
+    </section>
+    <div id="status" class="status" role="status" aria-live="polite">尚未采集。完成权限、会话和频率设置后开始。</div>
+    <section class="latest-panel" aria-labelledby="latest-title">
+      <div class="section-heading"><h2 id="latest-title">最新原文</h2><button id="open-review" class="text-button" disabled>核对原文</button></div>
+      <p id="latest-meta" class="hint">当前会话尚无本地截图</p>
+      <div class="actions"><button id="first-capture" disabled>先采集一张</button><button id="export-originals" class="text-button" disabled>导出本会话原文</button></div>
+      <div id="latest-text" class="raw-text">开始采集后，这里会显示所选会话的最新识别原文。</div>
+      <p class="hint">此处是已采集的整屏原文，不必先人工核对才能查看。下方“已核对消息”是另一类记录。</p>
+    </section>
+    <details id="setup-panel" class="section-disclosure"><summary>会话绑定与高级设置</summary>
+      <section class="capture-panel" aria-labelledby="capture-title">
+        <div class="section-heading"><h2 id="capture-title">微信窗口与区域</h2><button id="refresh" class="text-button">刷新窗口</button></div>
+        <label for="sources">目标窗口</label><div class="row"><select id="sources"><option value="">请选择窗口</option></select><button id="connect">连接预览</button></div>
+        <p class="hint">连接不等于采集。先在微信手动打开目标会话，再框选完整标题与消息区域。自动轮巡另外需要左侧入口。</p>
+        <div id="preview-empty" class="empty">请先选择有权处理的微信窗口。</div>
+        <video id="video" autoplay muted playsinline hidden></video>
+        <div id="guided-region" class="notice" hidden><p id="guided-instruction" role="status">在预览图上拖出矩形，框住顶部完整会话名。</p><div class="actions"><button id="pick-title">框选会话名</button><button id="pick-messages">框选消息区</button><button id="pick-entry" hidden>框选左侧入口</button><button id="cancel-bind" class="text-button">取消绑定</button></div></div>
+        <div id="canvas-wrap" hidden><canvas id="selection" aria-label="聊天区域选择画布"></canvas></div>
+        <div class="row selection-tools"><button id="freeze" disabled>冻结画面并框选</button><span id="region-label" class="hint">未选择区域</span></div>
+        <label for="roi-purpose">本次框选用途</label><select id="roi-purpose"><option value="messages">聊天消息（避开输入框）</option><option value="title">顶部完整会话名</option><option value="entry">左侧入口（自动轮巡才需要）</option></select>
+        <p id="calibration-state" class="hint">当前会话需要标题与消息两块区域。</p>
+        <details id="coordinate-controls"><summary>键盘输入区域坐标</summary><div class="coordinates"><label>X<input id="roi-x" type="number" min="0" value="0"></label><label>Y<input id="roi-y" type="number" min="0" value="0"></label><label>宽<input id="roi-width" type="number" min="20" value="200"></label><label>高<input id="roi-height" type="number" min="20" value="200"></label></div><button id="apply-region">应用坐标</button></details>
+        <details id="group-config" open><summary>保存会话校准</summary>
+          <p class="hint">OCR 须与完整会话名一致；标题画面（含成员数）、窗口尺寸变化后需重新校准。识别不清不会保存消息。</p>
+          <label>完整会话名<input id="group-name" maxlength="200" placeholder="与微信顶部完整名称一致"></label>
+          <div hidden><input id="group-history" type="number" value="10"><input id="group-interval" type="number" value="30"></div>
+          <details><summary>可选平台绑定</summary><label>平台群 ID<input id="group-chat-id" maxlength="200"></label><label>采集账号 ID<input id="group-channel-id" maxlength="200"></label></details>
+          <div class="actions"><button id="group-save" class="primary">确认并绑定</button><button id="group-new" class="text-button">新建会话</button></div><p id="group-editing" class="hint">新会话配置。没有平台绑定时，仅本地保存与核对。</p>
+        </details>
+        <div class="actions"><button id="capture-one" disabled>采集一次</button><button id="start" hidden disabled>开始定时采集</button><button id="stop" disabled>断开预览</button></div>
+        <p class="hint">滚动方式在上方第 3 步设置。仅能识别可捕获画面，不保证消息完整性。锁屏、窗口变化或识别失败会暂停。</p>
+        <button id="import-image">导入已有区域截图</button>
+      </section>
+    </details>
+    <details id="review-panel" class="section-disclosure"><summary>原文核对</summary>
+      <section class="review-panel" aria-labelledby="review-title">
+        <div class="section-heading"><h2 id="review-title">原始依据</h2><span id="capture-count" class="badge">0 张截图</span></div>
+        <label for="group-filter">按会话查看</label><select id="group-filter"><option value="">全部来源</option></select>
+        <label for="captures">待核对截图</label><select id="captures"><option value="">采集后选择截图</option></select>
+        <div id="review-empty" class="empty">OCR 可能识错数字、姓名与否定词。请选择截图，对照原文核对。</div>
+        <div id="review-content" hidden>
+          <img id="evidence-image" alt="当前待核对的聊天区域截图"><p id="capture-meta" class="hint"></p>
+          <label for="ocr-original">OCR 原始文字（只读）</label><textarea id="ocr-original" rows="4" readonly></textarea>
+          <label for="message">本次核对的单条消息</label><textarea id="message" rows="4" maxlength="20000" placeholder="对照截图填写一条消息，不要将整屏当作一条。"></textarea>
+          <label>会话名称<input id="chat-label" maxlength="200"></label><label>发送人显示名称（可空）<input id="sender-label" maxlength="128" placeholder="无法确认时留空"></label>
+          <label>截图中的时间标记（可空）<input id="sent-at" maxlength="128" placeholder="如：昨天 14:30；不会推算发送时间"></label>
+          <details><summary>平台绑定 ID（上传时填写）</summary><p class="hint">ID 来自平台登记，不要用昵称冒充用户 ID。群须绑定已发布的信息收集机器人。</p><label>采集账号 ID<input id="channel-id" maxlength="200"></label><label>平台群 ID<input id="chat-id" maxlength="200"></label><label>发送人 ID<input id="sender-id" maxlength="200"></label></details>
+          <label class="check"><input id="review-consent" type="checkbox">已核对这条消息的正文、发送人及目标会话</label>
+          <button id="review" class="primary">保存已核对消息</button><p class="hint">不会上传。核对正文与 OCR 原文分别保留。</p>
+        </div>
+      </section>
+    </details>
+    <details id="records-panel" class="section-disclosure"><summary>已核对消息与平台提交</summary>
+      <section class="records-panel" aria-labelledby="records-title">
+        <div class="section-heading"><h2 id="records-title">已核对 <span id="record-count">0</span></h2></div>
+        <div class="actions"><button id="export">导出记录与同步队列</button><button id="clear" class="danger-text">清空本地数据</button></div>
+        <p class="hint">记录按上方“按会话查看”筛选；导出包含全部已核对记录。保留同文消息，平台接收不代表业务提取成功。</p>
+        <div class="table-scroll"><table class="record-table"><thead class="sr-only"><tr><th>会话 / 发送人</th><th>消息</th><th>核对时间</th><th>平台状态</th><th>操作</th></tr></thead><tbody id="records"></tbody></table></div>
+        <details id="platform-settings"><summary>平台连接（默认不上传）</summary><label>平台地址<input id="origin" type="url" placeholder="http://localhost:3001" autocomplete="off"></label><label>租户访问令牌<input id="token" type="password" placeholder="仅本次使用，不写入文件" autocomplete="off"></label><p class="hint">仅显式点击“提交平台”才发送已核对正文和绑定 ID，不上传截图。令牌需消息权限；仅本机地址允许 HTTP。</p></details>
+      </section>
+    </details>
+    <footer><span id="environment">正在检查本地环境…</span><span>紧急暂停：⌘⇧X / Ctrl+Shift+X</span><span>独立侧栏，不注入微信 · 非微信官方产品</span><details><summary>授权说明</summary>非商用免费 · 商用需书面授权：250979539@qq.com。仅处理有权使用的数据。</details></footer>
+  </main>
+  <dialog id="sync-review-dialog" aria-labelledby="sync-review-title">
+    <form id="sync-review-form">
+      <div class="section-heading"><h2 id="sync-review-title">核对单条消息</h2><button id="sync-review-close" type="button">关闭</button></div>
+      <p id="sync-review-group" class="hint"></p><img id="sync-review-image" alt="此消息采集时的原始聊天画面">
+      <p class="hint">只填写一条消息。无法分离多条消息或确认发送人时，请关闭并保留待核对，不把整屏作为一条提交。</p>
+      <label>微信发送人昵称<input id="sync-review-name" required maxlength="128"></label>
+      <label>发送方<select id="sync-review-self" required><option value="">请选择</option><option value="other">对方</option><option value="self">本人（当前微信账号）</option></select></label>
+      <label>单条消息正文<textarea id="sync-review-content" rows="5" required maxlength="20000"></textarea></label>
+      <label>原始时间标记（可空，不推算）<input id="sync-review-time" maxlength="128"></label>
+      <label class="check"><input id="sync-review-consent" type="checkbox" required>已对照截图核对这条消息、昵称、本人标记及目标群，且不是已同步的重复消息</label>
+      <p id="sync-review-error" class="hint" role="alert"></p><button id="sync-review-save" class="primary" type="submit">确认并加入同步队列</button>
+    </form>
+  </dialog>
+  <section class="run-bar" aria-label="采集操作"><div class="run-guidance"><p id="run-hint" role="status" aria-live="polite">正在检查…</p><button id="show-next-step" class="text-button" hidden>去设置</button></div><div class="primary-actions"><button id="sidecar-start" class="primary" disabled aria-describedby="run-hint">开始采集</button><button id="sidecar-pause" disabled>暂停</button></div></section>
+</body>
+</html>
