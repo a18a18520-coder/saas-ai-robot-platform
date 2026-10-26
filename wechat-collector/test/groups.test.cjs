@@ -54,7 +54,7 @@ test('control readiness is based on the native helper and fails closed',()=>{
   const control=new WindowControl('/synthetic',{platform:'darwin'});
   for(const value of [null,{}, {trusted:false}, {trusted:'true'}]) assert.throws(()=>control.assertTrusted(value),/控制组件未获系统授权/);
   assert.doesNotThrow(()=>control.assertTrusted({trusted:true}));
-  assert.match(control.componentPath,/^\/synthetic\/wechat-control-/);
+  assert.equal(control.componentPath,path.join('/synthetic',`wechat-control-${process.arch}`));
 });
 
 test('monitor start preflights helper trust before registering or activating',async()=>{
